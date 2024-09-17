@@ -240,7 +240,7 @@ class DsfAgentProgram implements AgentProgram {
 		state.updatePosition((DynamicPercept) percept);
 		state.updateDirection((DynamicPercept) percept);
 
-		if (!traceActions.isEmpty()) {
+		if (traceActions!=null &&!traceActions.isEmpty()) {
 			// means that we are at a tracing back action
 			Action nextaction = traceActions.poll();
 			state.agent_last_action = actionMap.get(nextaction);
@@ -340,7 +340,7 @@ class DsfAgentProgram implements AgentProgram {
 				}
 
 				if (now.equals(dest)) {// no nodes unknown , go home
-					traceActions = shortestPathAction(now, homePostion);
+					traceActions = shortestPathActionV2(now, homePostion);
 					if (null==traceActions){
 						return NoOpAction.NO_OP; 
 					}
@@ -348,7 +348,7 @@ class DsfAgentProgram implements AgentProgram {
 					return traceActions.poll();
 
 				}
-				traceActions = shortestPathAction(now, dest);
+				traceActions = shortestPathActionV2(now, dest);
 				// check if that is the position that forward to, if not throw exception
 				// find the shortest way to next node tin the Queue: another BFS
 				// return the next action
@@ -373,7 +373,7 @@ class DsfAgentProgram implements AgentProgram {
 
 				}
 				if (now.equals(dest)) {// no nodes unknown , go home
-					traceActions = shortestPathAction(now, homePostion);
+					traceActions = shortestPathActionV2(now, homePostion);
 					if (null==traceActions){
 						return NoOpAction.NO_OP; 
 					}
@@ -381,7 +381,7 @@ class DsfAgentProgram implements AgentProgram {
 					return traceActions.poll();
 				}
 
-				traceActions = shortestPathAction(now, dest);// to child node
+				traceActions = shortestPathActionV2(now, dest);// to child node
 				// not move forward but to the first in queue
 				state.agent_last_action = actionMap.get(traceActions.peek());
 				return traceActions.poll();
@@ -447,7 +447,7 @@ class DsfAgentProgram implements AgentProgram {
 	// private Set<Node> visited;
 	// only using the node we know
 	// iterating all the shortest path, searching for the minimum actions
-	private Queue<Action> shortestPathActionV2(Node from, Node dest) {
+	public Queue<Action> shortestPathActionV2(Node from, Node dest) {
 
 		if (from == null || dest == null) {
 			return null;
@@ -456,48 +456,100 @@ class DsfAgentProgram implements AgentProgram {
 			return null;
 		}
 
-		Set<Node> visited = new HashSet<Node>();
 		Queue<Node> nodeQueue = new LinkedList<Node>();
-	      // from dest to start, through all the nodes we known
-		visited.add(dest);
+		Integer shortestLength = -1;
+		List<Node> results = new ArrayList<Node>();
+		// from dest to start, through all the nodes we known
 		nodeQueue.offer(dest);
 		Node current = null;
+		int limit = 1000;
+		int count=0;
 		while (!nodeQueue.isEmpty()) {
-			current = nodeQueue.poll();
-			if (from.equals(current)) {
+			if(count++ >limit) {
 				break;
 			}
+			current = nodeQueue.poll();
 			List<Node> neighbor = getQualifiedNeighbor(current);
+			Node copy = null;
+			// each
 			for (Node n : neighbor) {
-				if (!visited.contains(n)) {
-					visited.add(n);
-					if (n.multiParents ==null){
-						n.multiParents= new ArrayList<Node>();
+				copy = new Node(n.x_position, n.y_position);// always make a copy because one spot might be reused
+				copy.parent = current;
+				nodeQueue.offer(copy);
+				if (from.equals(copy)) { // find one path to the dest, record it
+					Integer distance = calculateDistence(copy, dest);
+					if (shortestLength < 0) {
+						// the first found in bsf should be the shortest path
+						shortestLength = distance; 
+						results.add(copy);
+					}else if (distance == shortestLength) {
+						results.add(copy);
 					}
-					n.multiParents.add(current);
-					n.parent = current;
-					nodeQueue.offer(n);
 				}
-
 			}
 
+//			if (from.equals(copy)) { // find one path to the dest, record it
+//				Integer distance = calculateDistence(copy, dest);
+//				if (shortestLength < 0) {
+//					// the first found in bsf should be the shortest path
+//					shortestLength = distance; 
+//					results.add(copy);
+//				} else if (distance == shortestLength) {
+//					results.add(copy);
+//				}else if (distance > shortestLength) {
+//					break;// reach next level
+//				}
+//			}
+
 		}
-		if (current == null) {
+		if (results.isEmpty()) {
 			return null;
 		} else {
-			Queue<Action> actions = new LinkedList<Action>();
-			// the way from ——》 dest
-			state.tmp_direction = state.agent_direction;
-			while (current.parent != null) {
-				Queue<Action> alist = shortestActionsForNeighbor(current, current.parent);
-				while (alist.peek() != null) {
-					actions.offer(alist.poll());
-				}
-				current = current.parent;
+			Queue<Action> minimumAction = new LinkedList<Action>();
+			for (Node n:results ) {
+				// the way from ——》 dest
+				state.tmp_direction = state.agent_direction;
+				Queue<Action> actions = new LinkedList<Action>();
+				while (n.parent != null) {
+					
+					Queue<Action> alist = shortestActionsForNeighbor(n, n.parent);
+					while (alist.peek() != null) {
+						actions.offer(alist.poll());
+					}
+					n = n.parent;
 
+				}
+				if (minimumAction.isEmpty()) {
+					minimumAction= actions;
+				}else if (minimumAction.size()>actions.size()) {
+					minimumAction=actions;
+					
+				}
 			}
-			return actions;
+			
+//			Queue<Action> actions = new LinkedList<Action>();
+//			// the way from ——》 dest
+//			state.tmp_direction = state.agent_direction;
+//			while (current.parent != null) {
+//				Queue<Action> alist = shortestActionsForNeighbor(current, current.parent);
+//				while (alist.peek() != null) {
+//					actions.offer(alist.poll());
+//				}
+//				current = current.parent;
+//			}
+			return minimumAction;
 		}
+	}
+	
+	private Integer calculateDistence(Node child, Node root) {
+		int i = 1;
+		Node n=child;
+		while (n.parent != null && !root.equals(n.parent)) {
+			n=n.parent;
+			i++;
+		}
+		return i;
+
 	}
 
 	private List<Node> getQualifiedNeighbor(Node n) {
@@ -641,6 +693,18 @@ class DsfAgentProgram implements AgentProgram {
 public class RandomVacuumAgent extends AbstractAgent {
 	public RandomVacuumAgent() {
 		super(new DsfAgentProgram());
+	}
+	
+	
+	public static void main(String[] args) {
+		Node from =new Node(5,2);
+		Node to = new Node (4,3);
+		DsfAgentProgram agent = new DsfAgentProgram();
+		agent.state.agent_direction=1;
+		
+		System.out.print(agent.shortestPathActionV2(from, to));
+		
+		
 	}
 
 }

@@ -598,8 +598,6 @@ class Node {
 	public int x_position = 0;
 	public int y_position = 0;
 	public Node parent = null;
-	public List<Node> multiParents = null;
-
 	public Node(int x_position, int y_position) {
 		super();
 		this.x_position = x_position;
